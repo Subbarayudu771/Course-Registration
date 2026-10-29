@@ -6,7 +6,7 @@ This .NET 8 Web API implements only one course offering's enroll, drop, and FIFO
 - **Controller**: HTTP binding, status-code mapping, and API contract only.
 - **Service**: use-case orchestration, input validation, duplicate checks, prerequisite policy, drop/promotion workflow.
 - **Repository interface**: persistence boundary so an in-memory implementation can later be replaced without changing the use case.
-- **In-memory repository**: stores enrolled learners and an ordered linked-list waitlist; case-insensitive learner IDs prevent casing-based duplicates.
+- **In-memory repository**: stores enrolled learners and an ordered FIFO queue; case-insensitive learner IDs prevent casing-based duplicates.
 - **DTOs**: request contracts are separate from domain/result models.
 
 ## Rules and assumptions
@@ -26,7 +26,7 @@ This .NET 8 Web API implements only one course offering's enroll, drop, and FIFO
 - Failed/invalid operations do not change registration state.
 
 ## Concurrency and persistence
-A `SemaphoreSlim` in the singleton service serializes enrollment/drop workflows, making check-then-write and promotion atomic within this single application process. The repository also protects its own data structures with a lock. This is adequate for the requested in-memory prototype, but not a distributed deployment: multiple API instances would need a transactional database operation, row/advisory lock or equivalent concurrency control. In-memory data resets on restart.
+A standard C# `lock` in the singleton service serializes enrollment/drop workflows, making check-then-write and promotion atomic within this single application process. The repository also protects its own data structures with a lock. This is adequate for the requested in-memory prototype, but not a distributed deployment: multiple API instances would need a transactional database operation, row/advisory lock or equivalent concurrency control. In-memory data resets on restart.
 
 ## API
 - `POST /api/registrations/enroll` body: `{ "learnerId": "learner-1", "hasPrerequisite": true }`

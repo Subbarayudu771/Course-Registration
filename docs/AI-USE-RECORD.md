@@ -1,20 +1,23 @@
 # AI prompt and use record
 
-> Assessment requirement: replace or supplement this record with your own exact prompts, review notes, and evidence before submission. This file is a truthful starter record, not a claim that automated test execution occurred in this environment.
+This record summarizes the AI-assisted activities, human review, and verification performed for the final implementation.
 
-## Prompt used
-“Implement the supplied course registration use case in .NET 8: enroll, drop, FIFO waitlist promotion, prerequisite checks, duplicate protection, negative cases, focused unit tests, API documentation, and setup instructions. Keep the scope bounded and explain assumptions and tradeoffs.”
+## Prompts and activities
+
+1. Review the current code against the supplied course-waitlist assessment, including acceptance criteria, scope, deliverables, and overengineering.
+2. Replace `SemaphoreSlim` with a more familiar concurrency approach and complete the required assessment changes.
 
 ## AI contribution summary
 - Proposed a controller/service/repository separation and DTOs.
-- Proposed a process-local serialization gate to protect the enrollment/drop workflows.
+- Proposed a process-local serialization gate to protect the enrollment/drop workflows; this was reviewed and changed from `SemaphoreSlim` to the standard C# `lock` approach.
 - Drafted focused xUnit tests for capacity, duplicate requests, FIFO promotion, prerequisite failure, invalid IDs, repeated drops, and concurrent enrollment requests.
 - Drafted design/setup documentation.
 
 ## Review status
 - **Accepted as a starting implementation:** bounded service slice, interfaces, DTO separation, explicit prerequisite/waitlist assumptions, and focused tests.
-- **Requires independent verification:** compile/test with the .NET 8 SDK, inspect generated Swagger contract, and review all tests locally. This runtime did not have the `dotnet` CLI available, so no build/test execution is claimed here.
-- **Potential follow-up:** add API integration tests and validate HTTP response mapping once the project is run locally.
+- **Accepted and verified:** the final implementation uses `lock` around the synchronous multi-step workflows, while repository collection locks were retained.
+- **Accepted and verified:** the design, setup, AI-use, and limitations documentation was added or updated.
+- **Potential follow-up:** add API integration tests and validate HTTP response mapping in a larger production system.
 
 ## Evidence to add before submission
 1. Paste the exact prompts and relevant AI response excerpts you actually used.

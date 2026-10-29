@@ -3,51 +3,50 @@ using CourseRegistration.Api.Models;
 
 namespace CourseRegistration.Api.Services;
 
-/// <summary>Coordinates enrollment and promotion as one critical section within this process.</summary>
+/// <summary>Coordinates enrollment and promotion as one locked critical section within this process.</summary>
 public sealed class CourseRegistrationService : ICourseRegistrationService
 {
     private readonly ICourseRegistrationRepository _repository;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _sync = new();
 
     public CourseRegistrationService(ICourseRegistrationRepository repository) => _repository = repository;
 
-    public async Task<RegistrationResult> EnrollAsync(string? learnerId, bool hasPrerequisite, CancellationToken cancellationToken = default)
+    public Task<RegistrationResult> EnrollAsync(string? learnerId, bool hasPrerequisite, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var normalizedId = learnerId?.Trim();
         if (string.IsNullOrWhiteSpace(normalizedId))
-            return new(RegistrationStatus.InvalidRequest, "LearnerId is required.");
+            return Task.FromResult(new RegistrationResult(RegistrationStatus.InvalidRequest, "LearnerId is required."));
         if (!hasPrerequisite)
-            return new(RegistrationStatus.PrerequisiteNotMet, "Learner does not meet the course prerequisite.", normalizedId);
+            return Task.FromResult(new RegistrationResult(RegistrationStatus.PrerequisiteNotMet, "Learner does not meet the course prerequisite.", normalizedId));
 
-        await _gate.WaitAsync(cancellationToken);
-        try
+        lock (_sync)
         {
             if (_repository.IsRegistered(normalizedId))
-                return new(RegistrationStatus.AlreadyRegistered, "Learner is already enrolled or waitlisted.", normalizedId);
+                return Task.FromResult(new RegistrationResult(RegistrationStatus.AlreadyRegistered, "Learner is already enrolled or waitlisted.", normalizedId));
 
             if (_repository.EnrolledCount < _repository.Capacity)
             {
                 _repository.AddEnrollment(normalizedId, DateTimeOffset.UtcNow);
-                return new(RegistrationStatus.Enrolled, "Enrollment successful.", normalizedId);
+                return Task.FromResult(new RegistrationResult(RegistrationStatus.Enrolled, "Enrollment successful.", normalizedId));
             }
 
             _repository.AddToWaitlist(normalizedId, DateTimeOffset.UtcNow, hasPrerequisite);
-            return new(RegistrationStatus.Waitlisted, "Course is full; learner added to the waitlist.", normalizedId);
+            return Task.FromResult(new RegistrationResult(RegistrationStatus.Waitlisted, "Course is full; learner added to the waitlist.", normalizedId));
         }
-        finally { _gate.Release(); }
     }
 
-    public async Task<RegistrationResult> DropAsync(string? learnerId, CancellationToken cancellationToken = default)
+    public Task<RegistrationResult> DropAsync(string? learnerId, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var normalizedId = learnerId?.Trim();
         if (string.IsNullOrWhiteSpace(normalizedId))
-            return new(RegistrationStatus.InvalidRequest, "LearnerId is required.");
+            return Task.FromResult(new RegistrationResult(RegistrationStatus.InvalidRequest, "LearnerId is required."));
 
-        await _gate.WaitAsync(cancellationToken);
-        try
+        lock (_sync)
         {
             if (!_repository.RemoveEnrollment(normalizedId))
-                return new(RegistrationStatus.NotEnrolled, "Learner is not currently enrolled.", normalizedId);
+                return Task.FromResult(new RegistrationResult(RegistrationStatus.NotEnrolled, "Learner is not currently enrolled.", normalizedId));
 
             // Policy: learners failing prerequisites are rejected before entering the queue. Promotion
             // rechecks the stored prerequisite flag and skips any ineligible legacy/stale queue entries.
@@ -55,13 +54,12 @@ public sealed class CourseRegistrationService : ICourseRegistrationService
             {
                 var next = _repository.RemoveNextWaitlisted();
                 if (next is null)
-                    return new(RegistrationStatus.Enrolled, "Enrollment dropped; seat is now available.", normalizedId);
+                    return Task.FromResult(new RegistrationResult(RegistrationStatus.Enrolled, "Enrollment dropped; seat is now available.", normalizedId));
                 if (!next.HasPrerequisite) continue;
                 _repository.AddEnrollment(next.LearnerId, DateTimeOffset.UtcNow);
-                return new(RegistrationStatus.Promoted, "Enrollment dropped and the earliest eligible waitlisted learner was promoted.", normalizedId, next.LearnerId);
+                return Task.FromResult(new RegistrationResult(RegistrationStatus.Promoted, "Enrollment dropped and the earliest eligible waitlisted learner was promoted.", normalizedId, next.LearnerId));
             }
         }
-        finally { _gate.Release(); }
     }
 
     public RegistrationSnapshot GetSnapshot() => _repository.GetSnapshot();
